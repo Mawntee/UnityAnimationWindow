@@ -100,7 +100,42 @@ namespace UnityEditor.Enemeteen
                     dividers.Add(divisor);
                 }
                 else
-                    divisor = Mathf.RoundToInt(frameRate);
+                {
+                    // Fallback for awkward frame rates like 143 (11 x 13) where none of the
+                    // standard modulo branches match. Build the list directly here and return.
+                    int fr = Mathf.RoundToInt(frameRate);
+                    modulos = new List<float>(13 + 2);
+
+                    // Always include the per-frame modulo as the finest level (one tick per beat)
+                    modulos.Add(1f / frameRate);
+
+                    // Find all integer divisors and add them as coarser grouping levels,
+                    // ordered from finest to coarsest (smallest interval first)
+                    List<float> groupings = new List<float>();
+                    for (int d = 2; d < fr; d++)
+                    {
+                        if (fr % d == 0)
+                            groupings.Add((float)d / frameRate);
+                    }
+                    for (int g = groupings.Count - 1; g >= 0; g--)
+                        modulos.Add(groupings[g]);
+
+                    // Ticks based on seconds
+                    modulos.Add(1);
+                    modulos.Add(5);
+                    modulos.Add(10);
+                    modulos.Add(30);
+                    modulos.Add(60);
+                    modulos.Add(60 * 5);
+                    modulos.Add(60 * 10);
+                    modulos.Add(60 * 30);
+                    modulos.Add(3600);
+                    modulos.Add(3600 * 6);
+                    modulos.Add(3600 * 24);
+                    modulos.Add(3600 * 24 * 7);
+                    modulos.Add(3600 * 24 * 14);
+                    return modulos;
+                }
             }
             modulos = new List<float>(13 + dividers.Count);
 
