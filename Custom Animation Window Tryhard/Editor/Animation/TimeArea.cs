@@ -67,6 +67,8 @@ namespace UnityEditor.Enemeteen
 
         public TimeArea(bool minimalGUI, bool enableSliderZoomHorizontal, bool enableSliderZoomVertical) : base(minimalGUI, enableSliderZoomHorizontal, enableSliderZoomVertical)
         {
+            // Default modulos used before a frameRate is supplied via SetTickMarkerRanges(frameRate).
+            // Once a frameRate is known these are replaced by SetTickModulosForFrameRate.
             float[] modulos = new float[]
             {
                 0.0000001f, 0.0000005f, 0.000001f, 0.000005f, 0.00001f, 0.00005f, 0.0001f, 0.0005f,
@@ -79,8 +81,18 @@ namespace UnityEditor.Enemeteen
             vTicks.SetTickModulos(modulos);
         }
 
+        // Original overload retained for callers that don't supply a frameRate
         public void SetTickMarkerRanges()
         {
+            hTicks.SetRanges(shownArea.xMin, shownArea.xMax, drawRect.xMin, drawRect.xMax);
+            vTicks.SetRanges(shownArea.yMin, shownArea.yMax, drawRect.yMin, drawRect.yMax);
+        }
+
+        // New overload: rebuilds hTick modulos for the given frameRate before setting ranges.
+        // This ensures beat-aligned ticks for any sample rate, including non-standard ones like 143.
+        public void SetTickMarkerRanges(float frameRate)
+        {
+            hTicks.SetTickModulosForFrameRate(frameRate);
             hTicks.SetRanges(shownArea.xMin, shownArea.xMax, drawRect.xMin, drawRect.xMax);
             vTicks.SetRanges(shownArea.yMin, shownArea.yMax, drawRect.yMin, drawRect.yMax);
         }
@@ -97,7 +109,8 @@ namespace UnityEditor.Enemeteen
 
             HandleUtility.ApplyWireMaterial();
 
-            SetTickMarkerRanges();
+            // Pass frameRate so modulos are rebuilt to match the current sample rate
+            SetTickMarkerRanges(frameRate);
             hTicks.SetTickStrengths(kTickRulerDistMin, kTickRulerDistFull, true);
 
             Color tickColor = timeAreaStyles.timelineTick.normal.textColor;
@@ -106,7 +119,6 @@ namespace UnityEditor.Enemeteen
             GL.Begin(GL.LINES);
 
             // Draw tick markers of various sizes
-            Rect theShowArea = shownArea;
             for (int l = 0; l < hTicks.tickLevels; l++)
             {
                 float strength = hTicks.GetStrengthOfLevel(l) * .9f;
@@ -117,8 +129,8 @@ namespace UnityEditor.Enemeteen
                     for (int i = 0; i < m_TickCache.Count; i++)
                     {
                         if (m_TickCache[i] < 0) continue;
-                        int frame = Mathf.RoundToInt(m_TickCache[i] * frameRate);
-                        float x = FrameToPixel(frame, frameRate, position, theShowArea);
+                        // Calculate x relative to the BeginGroup rect to avoid global coordinate offset
+                        float x = (m_TickCache[i] - shownArea.xMin) * position.width / shownArea.width;
                         // Draw line
                         DrawVerticalLineFast(x, 0.0f, position.height, tickColor);
                     }
@@ -145,7 +157,8 @@ namespace UnityEditor.Enemeteen
 
             Color tempBackgroundColor = GUI.backgroundColor;
 
-            SetTickMarkerRanges();
+            // Pass frameRate so modulos are rebuilt to match the current sample rate
+            SetTickMarkerRanges(frameRate);
             hTicks.SetTickStrengths(kTickRulerDistMin, kTickRulerDistFull, true);
 
             Color baseColor = timeAreaStyles.timelineTick.normal.textColor;
@@ -156,8 +169,6 @@ namespace UnityEditor.Enemeteen
                 GL.Begin(GL.LINES);
 
                 // Draw tick markers of various sizes
-
-                Rect cachedShowArea = shownArea;
                 for (int l = 0; l < hTicks.tickLevels; l++)
                 {
                     float strength = hTicks.GetStrengthOfLevel(l) * .9f;
@@ -167,12 +178,13 @@ namespace UnityEditor.Enemeteen
                     {
                         if (m_TickCache[i] < hRangeMin || m_TickCache[i] > hRangeMax)
                             continue;
-                        int frame = Mathf.RoundToInt(m_TickCache[i] * frameRate);
 
                         float height = useEntireHeight
                             ? position.height
                             : position.height * Mathf.Min(1, strength) * kTickRulerHeightMax;
-                        float x = FrameToPixel(frame, frameRate, position, cachedShowArea);
+
+                        // Calculate x relative to the BeginGroup rect to avoid global coordinate offset
+                        float x = (m_TickCache[i] - shownArea.xMin) * position.width / shownArea.width;
 
                         // Draw line
                         DrawVerticalLineFast(x, position.height - height + 0.5f, position.height - 0.5f,
@@ -194,19 +206,16 @@ namespace UnityEditor.Enemeteen
                     if (m_TickCache[i] < hRangeMin || m_TickCache[i] > hRangeMax)
                         continue;
 
-                    int frame = Mathf.RoundToInt(m_TickCache[i] * frameRate);
-                    // Important to take floor of positions of GUI stuff to get pixel correct alignment of
-                    // stuff drawn with both GUI and Handles/GL. Otherwise things are off by one pixel half the time.
-
-                    float labelpos = Mathf.Floor(FrameToPixel(frame, frameRate, position));
+                    // Calculate label position relative to the BeginGroup rect to avoid global coordinate offset
+                    float labelpos = Mathf.Floor((m_TickCache[i] - shownArea.xMin) * position.width / shownArea.width);
                     string label = FormatTickTime(m_TickCache[i], frameRate, timeFormat);
                     GUI.Label(new Rect(labelpos + 3, -1, 40, 20), label, timeAreaStyles.timelineTick);
                 }
             }
-            GUI.EndGroup();
 
             GUI.backgroundColor = tempBackgroundColor;
             GUI.color = backupCol;
+            GUI.EndGroup();
         }
 
         public static void DrawPlayhead(float x, float yMin, float yMax, float thickness, float alpha)
